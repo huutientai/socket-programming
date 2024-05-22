@@ -53,3 +53,5 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+//gcc -o showip showip.c
+//./showip example.com
