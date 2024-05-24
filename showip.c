@@ -55,3 +55,4 @@ int main(int argc, char *argv[])
 }
 //gcc -o showip showip.c
 //./showip example.com
+// day la check update
