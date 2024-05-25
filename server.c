@@ -117,10 +117,38 @@ int main(void)
 
         if (!fork()) { // this is the child process
             close(sockfd); // child doesn't need the listener
-            if (send(new_fd, "Hello, world!", 13, 0) == -1)
+            FILE *file = fopen("index.html", "r");
+            if (file == NULL)
+            {
+                /* code */
+                perror("fopen");
+                close(new_fd);
+                exit(1);
+            }
+            fseek(file, 0, SEEK_END);
+            long file_size = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            char *buffer = malloc(file_size + 1);
+            if (buffer == NULL)
+            {
+                /* code */
+                 perror("malloc");
+                 fclose(file);
+                 close(new_fd);
+                 exit(1);
+            }
+            fread(buffer, 1, file_size, file);
+            buffer[file_size] = '\0';
+            if (send(new_fd, buffer, file_size, 0) == -1)
+            {
+                /* code */
                 perror("send");
+            }
+            free(buffer);
+            fclose(file);
             close(new_fd);
             exit(0);
+
         }
         close(new_fd);  // parent doesn't need this
     }
