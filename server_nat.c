@@ -10,11 +10,15 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
-#include <sys/ioctl.h>
-#include <net/if.h>
+#include <pthread.h>
+#include <regex.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <pthread.h>
 
 #define PORT "3490"  // the port users will be connecting to
 #define BACKLOG 10   // how many pending connections queue will hold
+#define BUFFER_SIZE 8192 // Buffer size for response and request
 
 void sigchld_handler(int s)
 {
@@ -24,39 +28,134 @@ void sigchld_handler(int s)
     errno = saved_errno;
 }
 
+char* url_decode(const char *str) {
+    // Simple URL decode function (needs proper implementation)
+    char *decoded = strdup(str);
+    // Implement URL decoding logic here
+    return decoded;
+}
+
+const char* get_file_extension(const char *file_name) {
+    // Get file extension from file name
+    const char *ext = strrchr(file_name, '.');
+    return ext ? ext + 1 : "";
+}
+
+const char* get_mime_type(const char *file_ext) {
+    // Simple mime type based on file extension
+    if (strcmp(file_ext, "html") == 0) return "text/html";
+    if (strcmp(file_ext, "css") == 0) return "text/css";
+    if (strcmp(file_ext, "js") == 0) return "application/javascript";
+    if (strcmp(file_ext, "jpg") == 0) return "image/jpeg";
+    if (strcmp(file_ext, "png") == 0) return "image/png";
+    if (strcmp(file_ext, "gif") == 0) return "image/gif";
+    return "text/plain";
+}
+
+void build_http_response(const char *file_name,
+                         const char *file_ext,
+                         char *response,
+                         size_t *response_len) {
+    // Nếu tên tệp rỗng hoặc NULL, sử dụng "index.html" làm tên tệp mặc định
+    if (file_name == NULL || strlen(file_name) == 0) {
+        file_name = "index.html";
+        file_ext = "html";
+    }
+
+    // Tạo header HTTP
+    const char *mime_type = get_mime_type(file_ext);
+    char *header = (char *)malloc(BUFFER_SIZE * sizeof(char));
+    snprintf(header, BUFFER_SIZE,
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: %s\r\n"
+             "\r\n",
+             mime_type);
+
+    // Nếu file không tồn tại, trả về phản hồi 404 Not Found
+    int file_fd = open(file_name, O_RDONLY);
+    if (file_fd == -1) {
+        snprintf(response, BUFFER_SIZE,
+                 "HTTP/1.1 404 Not Found\r\n"
+                 "Content-Type: text/plain\r\n"
+                 "\r\n"
+                 "404 Not Found");
+        *response_len = strlen(response);
+        free(header);
+        return;
+    }
+
+    // Lấy kích thước file để tạo Content-Length
+    struct stat file_stat;
+    fstat(file_fd, &file_stat);
+    off_t file_size = file_stat.st_size;
+
+    // Sao chép header vào buffer phản hồi
+    *response_len = 0;
+    memcpy(response, header, strlen(header));
+    *response_len += strlen(header);
+
+    // Sao chép nội dung file vào buffer phản hồi
+    ssize_t bytes_read;
+    while ((bytes_read = read(file_fd,
+                              response + *response_len,
+                              BUFFER_SIZE - *response_len)) > 0) {
+        *response_len += bytes_read;
+    }
+
+    // Giải phóng bộ nhớ và đóng file
+    free(header);
+    close(file_fd);
+}
+
+void handle_client(void *arg) {
+    int client_fd = *((int *)arg);
+    char *buffer = (char *)malloc(BUFFER_SIZE * sizeof(char));
+
+    // receive request data from client and store into buffer
+    ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0);
+    if (bytes_received > 0) {
+        // check if request is GET
+        regex_t regex;
+        regcomp(&regex, "GET /([^ ]*) HTTP/1\\.", REG_EXTENDED);
+        regmatch_t matches[2];
+
+        if (regexec(&regex, buffer, 2, matches, 0) == 0) {
+            // extract filename from request and decode URL
+            buffer[matches[1].rm_eo] = '\0';
+            const char *url_encoded_file_name = buffer + matches[1].rm_so;
+            char *file_name = url_decode(url_encoded_file_name);
+
+            // get file extension
+            char file_ext[32];
+            strcpy(file_ext, get_file_extension(file_name));
+
+            // build HTTP response
+            char *response = (char *)malloc(BUFFER_SIZE * 2 * sizeof(char));
+            size_t response_len;
+            build_http_response(file_name, file_ext, response, &response_len);
+
+            // send HTTP response to client
+            send(client_fd, response, response_len, 0);
+
+            free(response);
+            free(file_name);
+        }
+        regfree(&regex);
+    }
+    close(client_fd);
+    free(arg);
+    free(buffer);
+    return;
+}
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET) {
         return &(((struct sockaddr_in*)sa)->sin_addr);
     }
+
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-
-void get_ip_address(const char *iface, char *ip_addr_str)
-{
-    int fd;
-    struct ifreq ifr;
-
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd == -1) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
-
-    strncpy(ifr.ifr_name, iface, IFNAMSIZ-1);
-    ifr.ifr_name[IFNAMSIZ-1] = '\0';
-
-    if (ioctl(fd, SIOCGIFADDR, &ifr) == -1) {
-        perror("ioctl");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    struct sockaddr_in *ip_addr = (struct sockaddr_in *)&ifr.ifr_addr;
-    strcpy(ip_addr_str, inet_ntoa(ip_addr->sin_addr));
-
-    close(fd);
 }
 
 int main(void)
@@ -69,17 +168,13 @@ int main(void)
     int yes=1;
     char s[INET6_ADDRSTRLEN];
     int rv;
-    char ip[INET_ADDRSTRLEN];
-
-    get_ip_address("eth0", ip);
-    printf("IP Address of eth0: %s\n", ip);
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // use my IP
 
-    if ((rv = getaddrinfo(ip, PORT, &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
@@ -130,7 +225,23 @@ int main(void)
     printf("server: waiting for connections...\n");
 
     while(1) {  // main accept() loop
-        sin_size = sizeof their_addr;
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        int *client_fd = malloc(sizeof(int));
+
+        if ((*client_fd = accept(sockfd, (struct sockaddr *)&client_addr, &client_addr_len)) < 0) {
+            perror("accept failed");
+            free(client_fd);
+            continue;
+        }
+
+        // create a new thread to handle client request
+        pthread_t thread_id;
+        pthread_create(&thread_id, NULL, (void *(*)(void *))handle_client, (void *)client_fd);
+        pthread_detach(thread_id);
+
+    
+        /* sin_size = sizeof their_addr;
         new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
         if (new_fd == -1) {
             perror("accept");
@@ -149,7 +260,7 @@ int main(void)
             close(new_fd);
             exit(0);
         }
-        close(new_fd);  // parent doesn't need this
+        close(new_fd);   */// parent doesn't need this
     }
 
     return 0;
