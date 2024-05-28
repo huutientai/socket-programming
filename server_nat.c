@@ -198,6 +198,15 @@ int main(void)
             perror("server: bind");
             continue;
         }
+        // Print server IP address
+        struct sockaddr_in addr;
+        socklen_t addr_len = sizeof(addr);
+        if (getsockname(sockfd, (struct sockaddr *)&addr, &addr_len) == -1) {
+            perror("getsockname");
+            exit(1);
+        }
+        inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)&addr), s, sizeof s);
+        printf("server: bound to %s\n", s);
 
         break;
     }
