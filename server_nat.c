@@ -14,7 +14,6 @@
 #include <regex.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <pthread.h>
 
 #define PORT "3490"  // the port users will be connecting to
 #define BACKLOG 10   // how many pending connections queue will hold
@@ -243,6 +242,8 @@ int main(void)
             free(client_fd);
             continue;
         }
+        inet_ntop(client_addr.sin_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof s);
+        printf("server: got connection from %s\n", s);
 
         // create a new thread to handle client request
         pthread_t thread_id;
