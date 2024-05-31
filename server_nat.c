@@ -242,7 +242,7 @@ int main(void)
             free(client_fd);
             continue;
         }
-        inet_ntop(client_addr.sin_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof s);
+        inet_ntop(client_addr.sin_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof s)
         printf("server: got connection from %s\n", s);
 
         // create a new thread to handle client request
