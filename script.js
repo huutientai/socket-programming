@@ -18,7 +18,7 @@ function updateRecipientName() {
     const recipientInput = document.getElementById('recipient-input');
     const recipientName = document.getElementById('recipient-name');
     recipientName.textContent = recipientInput.value;
-}
+} 
 
 function sendMessage() {
     const messageInput = document.getElementById('message-input');

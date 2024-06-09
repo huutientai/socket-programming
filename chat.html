@@ -26,10 +26,10 @@
                     <h2>Chat with <span id="recipient-name"></span></h2>
                     <input type="text" id="recipient-input" placeholder="Enter recipient's name" oninput="updateRecipientName()">
                 </div>
-                <div class="chat-window" id="chat-window">
+                <div class="chat-window" id="chat-box">
                     <!-- Messages will be displayed here -->
                 </div>
-                <div class="chat-input">
+                <div class="chat-input" id="chat-form">
                     <input type="text" id="message-input" placeholder="Type your message here...">
                     <button onclick="sendMessage()">Send</button>
                 </div>
@@ -40,6 +40,40 @@
         <p>&copy; 2024 My Home Page. All rights reserved.</p>
     </footer>
 
-    <script src="script.js"></script>
+    <script src="script.js">
+        // Function to send message using POST request
+        async function sendMessage(message) {
+            const response = await fetch('/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain'
+                },
+                body: message
+            });
+            return response;
+        }
+
+        // Function to load messages using GET request
+        async function loadMessages() {
+            const response = await fetch('/messages');
+            const messages = await response.text();
+            document.getElementById('chat-box').innerHTML = messages.replace(/\n/g, '<br>');
+        }
+
+        // Event listener for form submission
+        document.getElementById('chat-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const message = document.getElementById('message-input').value;
+            if (message.trim() !== '') {
+                await sendMessage(message);
+                document.getElementById('message-input').value = '';
+                await loadMessages();
+            }
+        });
+
+        // Load messages initially
+        loadMessages();
+    </script>
+    
 </body>
 </html>

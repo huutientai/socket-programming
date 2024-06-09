@@ -62,16 +62,25 @@ void build_http_response(const char *file_name,
     }
 
     // Tạo header HTTP
-    const char *mime_type = get_mime_type(file_ext);
+    /* const char *mime_type = get_mime_type(file_ext);
     char *header = (char *)malloc(BUFFER_SIZE * sizeof(char));
     snprintf(header, BUFFER_SIZE,
              "HTTP/1.1 200 OK\r\n"
              "Content-Type: %s\r\n"
              "\r\n",
-             mime_type);
+             mime_type); */
 
     // Nếu file không tồn tại, trả về phản hồi 404 Not Found
+    const char *mime_type = get_mime_type(file_ext);
+    char *header = (char *)malloc(BUFFER_SIZE * sizeof(char));
     int file_fd = open(file_name, O_RDONLY);
+    if (file_fd == -1) {
+        snprintf(response, BUFFER_SIZE, "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\n404 Not Found");
+        *response_len = strlen(response);
+        free(header);
+        return;
+    }
+ /*    int file_fd = open(file_name, O_RDONLY);
     if (file_fd == -1) {
         snprintf(response, BUFFER_SIZE,
                  "HTTP/1.1 404 Not Found\r\n"
@@ -81,12 +90,15 @@ void build_http_response(const char *file_name,
         *response_len = strlen(response);
         free(header);
         return;
-    }
+    } */
 
     // Lấy kích thước file để tạo Content-Length
     struct stat file_stat;
     fstat(file_fd, &file_stat);
     off_t file_size = file_stat.st_size;
+    // new
+
+    snprintf(header, BUFFER_SIZE, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", mime_type, file_size);
 
     // Sao chép header vào buffer phản hồi
     *response_len = 0;
@@ -106,9 +118,41 @@ void build_http_response(const char *file_name,
     close(file_fd);
 }
 
+void save_message(const char *message) {
+    // Lưu tin nhắn vào file
+    FILE *file = fopen("data.txt", "a");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return;
+    } 
+    fprintf(file, "%s\n", message);
+    fclose(file);
+}
+
+void send_messages(int client_fd) {
+     // Gửi tất cả các tin nhắn từ file đến client
+    FILE *file = fopen("data.txt", "r");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return;
+    } 
+
+    char buffer[BUFFER_SIZE];
+    while (fgets(buffer, sizeof(buffer), file)) {
+        send(client_fd, buffer, strlen(buffer), 0);
+    }
+    fclose(file);
+}
+
+
 void handle_client(void *arg) {
     int client_fd = *((int *)arg);
     char *buffer = (char *)malloc(BUFFER_SIZE * sizeof(char));
+   /*  FILE *file = fopen("data.txt", "r");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return;
+    }  */
 
     // receive request data from client and store into buffer
     ssize_t bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0);
@@ -118,7 +162,7 @@ void handle_client(void *arg) {
         regcomp(&regex, "GET /([^ ]*) HTTP/1\\.", REG_EXTENDED);
         regmatch_t matches[2];
 
-        if (regexec(&regex, buffer, 2, matches, 0) == 0) {
+        /* if (regexec(&regex, buffer, 2, matches, 0) == 0) {
             // extract filename from request and decode URL
             buffer[matches[1].rm_eo] = '\0';
             const char *url_encoded_file_name = buffer + matches[1].rm_so;
@@ -132,12 +176,56 @@ void handle_client(void *arg) {
             char *response = (char *)malloc(BUFFER_SIZE * 2 * sizeof(char));
             size_t response_len;
             build_http_response(file_name, file_ext, response, &response_len);
+            regcomp(&regex, "POST /send HTTP/1\\.", REG_EXTENDED);
+            if (regexec(&regex, buffer, 2, matches, 0) == 0) {
+                // extract message from request body
+                char *message = strstr(buffer, "\r\n\r\n");
+                if (message != NULL) {
+                    message += 4; // skip "\r\n\r\n"
+                    save_message(message);
+                }
+            } else {
+                // Invalid request
+                const char *invalid_response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid Request";
+                send(client_fd, invalid_response, strlen(invalid_response), 0);
+            }
 
             // send HTTP response to client
             send(client_fd, response, response_len, 0);
+            //close(file);
 
             free(response);
             free(file_name);
+        } */
+        if (regexec(&regex, buffer, 2, matches, 0) == 0) {
+            buffer[matches[1].rm_eo] = '\0';
+            const char *url_encoded_file_name = buffer + matches[1].rm_so;
+            char *file_name = url_decode(url_encoded_file_name);
+
+            char file_ext[32];
+            strcpy(file_ext, get_file_extension(file_name));
+
+            char response[BUFFER_SIZE * 2];
+            size_t response_len;
+            build_http_response(file_name, file_ext, response, &response_len);
+
+            send(client_fd, response, response_len, 0);
+
+            free(file_name);
+        } else {
+            regcomp(&regex, "POST /send HTTP/1\\.", REG_EXTENDED);
+            if (regexec(&regex, buffer, 2, matches, 0) == 0) {
+                char *message = strstr(buffer, "\r\n\r\n");
+                if (message != NULL) {
+                    message += 4;
+                    save_message(message);
+                }
+                const char *success_response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nMessage received";
+                send(client_fd, success_response, strlen(success_response), 0);
+            } else {
+                const char *invalid_response = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid Request";
+                send(client_fd, invalid_response, strlen(invalid_response), 0);
+            }
         }
         regfree(&regex);
     }
@@ -242,7 +330,7 @@ int main(void)
             free(client_fd);
             continue;
         }
-        inet_ntop(client_addr.sin_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof s)
+        inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
         printf("server: got connection from %s\n", s);
 
         // create a new thread to handle client request
