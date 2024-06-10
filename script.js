@@ -1,33 +1,41 @@
-document.addEventListener('DOMContentLoaded', function() {
-    fetch('data.txt')
-        .then(response => response.text())
-        .then(data => {
-            const chatWindow = document.getElementById('chat-window');
-            const lines = data.split('\n');
-            lines.forEach(line => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message received';
-                messageDiv.textContent = line;
-                chatWindow.appendChild(messageDiv);
-            });
-        })
-        .catch(error => console.error('Error fetching the file:', error));
-});
-
+// Update recipient's name based on input
 function updateRecipientName() {
-    const recipientInput = document.getElementById('recipient-input');
-    const recipientName = document.getElementById('recipient-name');
-    recipientName.textContent = recipientInput.value;
-} 
+    const recipientInput = document.getElementById('recipient-input').value;
+    document.getElementById('recipient-name').textContent = recipientInput;
+}
 
-function sendMessage() {
-    const messageInput = document.getElementById('message-input');
-    const chatWindow = document.getElementById('chat-window');
-    if (messageInput.value.trim() !== '') {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message sent';
-        messageDiv.textContent = messageInput.value;
-        chatWindow.appendChild(messageDiv);
-        messageInput.value = '';
+// Function to send a message using POST request
+async function sendMessage() {
+    const messageInput = document.getElementById('message-input').value;
+    if (messageInput.trim() !== '') {
+        const response = await fetch('/send', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'text/plain'
+            },
+            body: messageInput
+        });
+
+        if (response.ok) {
+            document.getElementById('message-input').value = '';
+            await loadMessages();
+        } else {
+            console.error('Failed to send message');
+        }
     }
 }
+
+// Function to load messages using GET request
+async function loadMessages() {
+    const response = await fetch('/messages');
+    const messages = await response.text();
+    document.getElementById('chat-box').innerHTML = messages.replace(/\n/g, '<br>');
+}
+
+// Load messages initially
+document.addEventListener('DOMContentLoaded', (event) => {
+    loadMessages();
+});
+
+// Periodically refresh messages every 5 seconds
+setInterval(loadMessages, 5000);

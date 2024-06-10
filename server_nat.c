@@ -202,14 +202,18 @@ void handle_client(void *arg) {
             const char *url_encoded_file_name = buffer + matches[1].rm_so;
             char *file_name = url_decode(url_encoded_file_name);
 
-            char file_ext[32];
-            strcpy(file_ext, get_file_extension(file_name));
+            if (strcmp(file_name, "messages") == 0) {
+                send_messages(client_fd);
+            } else {
+                char file_ext[32];
+                strcpy(file_ext, get_file_extension(file_name));
 
-            char response[BUFFER_SIZE * 2];
-            size_t response_len;
-            build_http_response(file_name, file_ext, response, &response_len);
+                char response[BUFFER_SIZE * 2];
+                size_t response_len;
+                build_http_response(file_name, file_ext, response, &response_len);
 
-            send(client_fd, response, response_len, 0);
+                send(client_fd, response, response_len, 0);
+            }
 
             free(file_name);
         } else {
