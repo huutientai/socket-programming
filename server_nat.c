@@ -130,7 +130,7 @@ void save_message(const char *message) {
 }
 
 void send_messages(int client_fd) {
-     // Gửi tất cả các tin nhắn từ file đến client
+    /*  // Gửi tất cả các tin nhắn từ file đến client
     FILE *file = fopen("data.txt", "r");
     if (file == NULL) {
         perror("Failed to open file");
@@ -141,7 +141,26 @@ void send_messages(int client_fd) {
     while (fgets(buffer, sizeof(buffer), file)) {
         send(client_fd, buffer, strlen(buffer), 0);
     }
+    fclose(file); */
+    FILE *file = fopen("data.txt", "r");
+    if (file == NULL) {
+        const char *error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to open messages file";
+        send(client_fd, error_response, strlen(error_response), 0);
+        return;
+    }
+
+    char *response = (char *)malloc(BUFFER_SIZE * sizeof(char));
+    size_t response_len = 0;
+    response_len += snprintf(response + response_len, BUFFER_SIZE - response_len, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n");
+
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        response_len += snprintf(response + response_len, BUFFER_SIZE - response_len, "%s", line);
+    }
+
     fclose(file);
+    send(client_fd, response, response_len, 0);
+    free(response);
 }
 
 
